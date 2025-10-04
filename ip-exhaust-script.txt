@@ -1,0 +1,40 @@
+## IP exhaust % script
+
+gcloud recommender insights list \
+  --insight-type=google.networkanalyzer.vpcnetwork.ipAddressInsight \
+  --location=global \
+  --project=YOUR-GCP-PROJECT-NAME \
+  --format=json | jq -r '
+  def round2(x): ((x * 10000 + 0.5) | floor) / 100;
+  .[]
+  | select(.content | has("ipUtilizationSummaryInfo"))
+  | .content.ipUtilizationSummaryInfo[]
+  | .networkStats[]
+  | .subnetStats[] as $subnet
+  | $subnet.subnetRangeStats[]
+  | [
+      (round2(.allocationRatio) | tostring + "%"),
+      (.subnetRangePrefix),
+      (.subnetRangeName // ""),
+      ($subnet.subnetUri)
+    ]
+  | @tsv
+' | awk 'BEGIN {print "AllocationRatio\tsubnetRangePrefix\tsubnetRangeName\tsubnetUri"} {print}' \
+| python3 -c '
+import sys
+from tabulate import tabulate
+data = [line.strip().split("\t") for line in sys.stdin]
+print(tabulate(data[1:], headers=data[0], tablefmt="grid"))
+' > vpc-range-output.txt
+
+
+## Sample output:
++-------------------+---------------------+-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------+
+| AllocationRatio   | subnetRangePrefix   | subnetRangeName   | subnetUri                                                                                                                                          
+|+===================+=====================+===================+====================================================================================================================================================+
+| 3.33%             | 182.185.182.0/26     |                   | //compute.googleapis.com/projects/your-gcp-project/regions/us-central1/subnetworks/your-gcp-project-subnet                               |
++-------------------+---------------------+-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------+| 
+3.33%               | 182.186.182.0/26     |                   | //compute.googleapis.com/projects/your-gcp-project/regions/us-central1/subnetworks/your-gcp-project-subnet                                    |
++-------------------+---------------------+-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------+| 
+38.33%              | 182.187.182.0/26       |                   | //compute.googleapis.com/projects/your-gcp-project/regions/us-central1/subnetworks/your-gcp-project-subnet                                              |
++-------------------+---------------------+-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------+
